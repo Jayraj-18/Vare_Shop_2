@@ -12,6 +12,24 @@ import Signup from './pages/Signup'
 import AdminDashboard from './pages/AdminDashboard'
 import CheckoutModal from './components/CheckoutModal'
 
+function loadRazorpayScript() {
+  return new Promise((resolve) => {
+    if (document.getElementById('razorpay-sdk')) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'razorpay-sdk';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => {
+      resolve(true);
+    };
+    script.onerror = () => {
+      resolve(false);
+    };
+    document.body.appendChild(script);
+  });
+}
 
 export default function App() {
   const { user } = useAuth()
@@ -92,11 +110,64 @@ export default function App() {
 
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0)
 
-  const handleCheckoutSubmit = (addressData) => {
-    console.log('Order Details:', { cart, address: addressData })
-    setShowCheckoutModal(false)
-    setCart([]) // Clear cart after successful "checkout"
-    showToast('Order placed successfully! Thank you for shopping.')
+  const handleCheckoutSubmit = async (addressData) => {
+    if (cart.length === 0) return;
+
+    const totalAmount = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+    const res = await loadRazorpayScript();
+    if (!res) {
+      showToast('Razorpay SDK failed to load. Are you online?');
+      return;
+    }
+
+    try {
+      // 1. Create order on the backend
+      const response = await fetch('http://localhost:5000/api/payment/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: totalAmount }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        showToast('Server error. Could not create payment order.');
+        return;
+      }
+
+      // 2. Initialize Razorpay payment
+      const options = {
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency,
+        name: "Vare Collection",
+        description: "Test Transaction",
+        order_id: data.orderId,
+        handler: function (response) {
+          console.log('Payment Successful:', response, { address: addressData });
+          setShowCheckoutModal(false);
+          setCart([]);
+          showToast('Payment successful! Order placed successfully.');
+        },
+        prefill: {
+          name: user?.name || "Customer",
+          email: user?.email || "customer@example.com",
+          contact: "9999999999" // Test number
+        },
+        theme: {
+          color: "#000000" // Use our theme's accent or dark color
+        }
+      };
+
+      const paymentObject = new window.Razorpay(options);
+      paymentObject.open();
+    } catch (error) {
+      console.error('Payment initialization error:', error);
+      showToast('Something went wrong during payment initialization.');
+    }
   }
 
   return (
