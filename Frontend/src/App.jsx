@@ -123,7 +123,7 @@ export default function App() {
 
     try {
       // 1. Create order on the backend
-      const response = await fetch('http://localhost:5000/api/payment/create-order', {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/payment/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
